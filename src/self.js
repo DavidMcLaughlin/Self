@@ -3,7 +3,7 @@
  *  Copyright 2010, David McLaughlin
  *  http://www.dmclaughlin.com
  * 
- *  Release: 0.0.1 (Maths Edition)
+ *  Release: 0.0.2 (Strings Edition)
  */
  var self = (function() {
  
@@ -22,208 +22,74 @@
      */
     var tokenize = (function() {
         
-        var rawTokens;
-        var tokenPointer;
-        var rawSource; 
-        
-        /* 
-         *  Token reg ex - creates tokens from all valid JavaScript grammar
-         *
-         *  [0-9]+([xX][0-9a-fA-F]+|\.[0-9]*)?([eE][+\-]?[0-9]+)?   
-         *  [;:()\[\]{},]                           ;,:,(),[],{},",',, 
-         *  \+[\+=]?                                  +, ++, += 
-         *  \-[\-=]?                                  -, --, -= 
-         *  \*[\*=]?                                  *, *=
-         *  \/[\/=]?                                  /, /=
-         *  %=?                                       %, %=
-         *  ==?=?                                     =, ==, ===
-         *  !=?=?                                     !, !=, !==
-         *  >>?>?=?                                   >, >=, >>, >>>, >>=, >>>=
-         *  <<?=?                                     <, <=, <<, <<=
-         *  \|\|                                      ||
-         *  &&                                        &&
-         *  .                                         . 
-         *  &=?                                       &, &=
-         *  \^=?                                      ^, ^=
-         *  \|=?                                      |, |=
-         *  ~=?                                       ~, ~= 
-         *  >>>?=?                                    >>,>>=,>>>,>>>=
-         *  [a-zA-Z$_][a-zA-Z0-9_$]*                  $, b, b1, NaN, Infinity, my_var, MyClass, _privateFunc, $jQuery, etc..
-         *  ""|"(.*?)[^\\]"                            "", "string 'literal'", "he said \"this is quoted\""
-         *  ''|'(.*?)[^\\]'                            '', 'string "literal"', 'he said this isn\'t quoted'
-         */         
-        var tokenre = /\s*([0-9]+([xX][0-9a-fA-F]+|\.[0-9]*)?([eE][+\-]?[0-9]+)?|[;:()\[\]{},]|\+[\+=]?|-[\-=]?|\*[\*=]?|\/[\/=]?|%=?|==?=?|!=?=?|>>?>?=?|<<?=?|\|\||&&|\.|&=?|\^=?|\|=?|~=?|[a-zA-Z$_][a-zA-Z0-9_$]*|""|"(.*?)([^\\]|\\\\)"|''|'(.*?)([^\\]|\\\\)')/;
-        
-        /*
-         *  Return the next token and increment
-         *  the token pointer
-         */        
-        function next() {
-            var t = rawTokens[tokenPointer];
-            tokenPointer += 1;
-            return t;
-        }
-        
-        /*
-         *  Peek at what the next token will be
-         */
-        function peek() {
-            return rawTokens[tokenPointer];
-        }  
+        var regexes = {
+            whitespace: /^\s+/,        
+            name:       /^([a-zA-Z$_][a-zA-Z0-9_$]*)/,        
+            number:     /^([0-9]+([xX][0-9a-fA-F]+|\.[0-9]*)?([eE][+\-]?[0-9]+)?)/, 
+            operator:   /^([;:()\[\]{},]|\+[\+=]?|-[\-=]?|\*[\*=]?|\/[\/=]?|%=?|==?=?|!=?=?|>>?>?=?|<<?=?|\|\||&&|\.|&=?|\^=?|\|=?|~=?)/,
+            string:     /^(""|"(.*?)([^\\]|\\\\)"|''|'(.*?)([^\\]|\\\\)')/
+        };                
 
-        function isDigit(c) {
-            if(c >= '0' && c <= '9') {
-                return true;
-            }
-            return false;
-        }
-        
-        /*
-         *  Creates an object from a raw token
-         */
-        function parseToken() {                   
-            var i = 0, c, str, token, val, parsed = {};
-            
-            token = next(); // get the next raw token 
-            val = token[1] || token[0]; // get the clean token value
-            
-            c = val.charAt(i);
-            while(c) {
-                // numbers
-                if(isDigit(c)) {
-                    str = c;
-                    i += 1;
-                    
-                    // leading zero, could be hex and octal or just a number with a leading zero..
-                    // but regardless, when there is a leading zero 0 you can't have decimals or exponents
-                    if(str === '0') {  // octal and hex
-                        c = val.charAt(i);
-                        if(c === 'x' || c === 'X') { // hex - i.e. 0x4af4
-                            str += c;
-                            i += 1;
-                            for(;;) {
-                                c = val.charAt(i);
-                                if(isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
-                                    str += c;
-                                    i += 1;
-                                } else {
-                                    if(c !== '') {
-                                        error("Unexpected character " + c + " in number " + val);
-                                        c = '';
-                                    }                                
-                                    break;
-                                }
-                            }
-                            parsed = { type: 'number', value: str };                              
-                        } else if(isDigit(c)) { // octal - i.e. 0214                      
-                            str += c;
-                            i += 1;
-                            for(;;) {
-                                c = val.charAt(i);
-                                if(isDigit(c)) {
-                                    str += c;
-                                    i += 1;
-                                } else {
-                                    if(c !== '') {
-                                        error("Unexpected character " + c + " in number " + val);
-                                        c = '';
-                                    }
-                                    c = '';
-                                    break;
-                                }
-                            }
-                            parsed = { type: 'number', value: str };                              
-                        } else if(c === '') { // 0 on its own
-                            parsed = { type: 'number', value: "0" };                          
-                            break;
-                        } else { // illegal
-                            error("Unexpected character " + c + " in number " + val + ".");
-                            c = '';
-                        }
-                    } else { // normal numbers  
-                        for(;;) {
-                            c = val.charAt(i);
-                            // support this valid JS number: 950.5e-2
-                            if(isDigit(c) || c === '.' || c === 'e' || c === 'E' || c === '+' || c === '-') {
-                                str += c;
-                                i += 1;
-                            } else if ( ( c >= 'a' && c <= 'f') || ( c >= 'A' && c <= 'F') || c === 'x' || c === 'X' ) {
-                                error("Unexpected character " + c + " in number " + val + ".");
-                                c = '';
-                                break;
-                            } else {
-                                break;
-                            }
-                        }
-                        parsed = { type: 'number', value: str };                    
-                    }
-                } // Names
-                else if((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '$') {
-                    str = c;
-                    i += 1;
-                    for(;;) {
-                        c = val.charAt(i);
-                        if((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_' || c === '$' || isDigit(c)) {
-                            str += c;
-                            i += 1;
-                        } else {
-                            if(c !== '') {
-                                error("Unexpected character " + c + " in name " + val + ".");
-                                c = '';                                
-                            }
-                            break;
-                        }
-                        parsed = { type: 'name', value: str };
-                    }
-                } // Strings
-                else if(c === '"' || c === "'") {
-                    var quoteType = (c === "'") ? "single" : "double";                    
-                    var str = val.slice(1,-1);        // remove first and last characters
-                    parsed = { type: 'string', value: str, quoted: quoteType };
-                    break;
-                    
-                } else {   // operators
-                    parsed = { type: 'operator', value: val };
-                    c = "";
-                }            
-            }
-            return parsed;
-        };   
-
-       /*
-         *  Creates raw token strings from sour code
-         */
-        var createTokens = function(str) {
-            var result = tokenre.exec(str);
-            var tokens = [];
-            while(result !== null) { 
-                tokens.push(result);    
-                str = str.slice(result[0].length);
-                result = tokenre.exec(str);
+        function parseToken(token) {
+            var parsed, val = token.value, type = token.type;            
+            if (type === 'string') {
+                var c = val.charAt(0);
+                var quoteType = (c === "'") ? "single" : "double";
+                var str = val.slice(1,-1);
+                parsed = { type: type, value: str, quoted: quoteType };
+            } else if (type === 'operator' || type === 'name' || type === 'number') {
+                parsed = { type: type, value: val };
+            } else {
+                error("No token parse rule for token type: " + type);                
             }            
-            return tokens;              
-        };
+            return parsed;
+        }
+        
+        /*
+         *  Apply each regex to the source
+         */
+        function token(source) {
+            // try each regex against the source
+            for(var regex in regexes) {
+                if(regexes.hasOwnProperty(regex)) {
+                    var result = regexes[regex].exec(source);
+                    if(result && regex !== 'whitespace') {
+                        // strip the found token from the source
+                        source = source.slice(result[0].length);
+                        return { 
+                            source: source, 
+                            token: parseToken({value: result[0], type: regex})
+                        };
+                    } else if(result && regex === 'whitespace') {
+                        source = source.slice(result[0].length);
+                        return token(source);
+                    }                 
+                } 
+            }
+            return null;
+        }
+        
+        function createTokens (source) {
+            var tokens = [], result;
+            while(source) {
+                result = token(source); 
+                if(result && result.token) {
+                    source = result.source;
+                    tokens.push(result.token);
+                } else {
+                    error("ILLEGAL TOKEN: " + source);
+                    break;
+                }
+            }
+            return tokens;
+        }
         
         /*
          * Takes source code, splits into raw tokens and
          * parses each token with information about the content
          */
         return function(source) {
-            var parsedTokens = [];
-			
-			// reset state
-			rawTokens = [];
-            tokenPointer = 0;
-            rawSource = source;
-			
-            // create a list of raw tokens from the source code
-            rawTokens = createTokens(source); 
-            // parse each token, adding extra metadata about the token
-            while(tokenPointer < rawTokens.length) {
-                var parsed = parseToken();
-                parsedTokens.push(parsed);
-            }
-            return parsedTokens;
+            return createTokens(source);  
         };
     })(); 
  
