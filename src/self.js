@@ -3,7 +3,7 @@
  *  Copyright 2010, David McLaughlin
  *  http://www.dmclaughlin.com
  * 
- *  Date: Sunday Feb 7th 2010
+ *  Release: 0.0.1 (Maths Edition)
  */
  var self = (function() {
  
@@ -24,12 +24,13 @@
         
         var rawTokens;
         var tokenPointer;
+        var rawSource; 
         
         /* 
          *  Token reg ex - creates tokens from all valid JavaScript grammar
          *
-         *  [0-9]+([xX][0-9a-fA-F]+|\.[0-9]*)?([eE][+\-]?[0-9]+)?    5, 51, 5., 5.1, 5.2e10, 5.e-10, 023, 0xab456
-         *  [;:()\[\]{},"']                           ;,:,(),[],{},",',, 
+         *  [0-9]+([xX][0-9a-fA-F]+|\.[0-9]*)?([eE][+\-]?[0-9]+)?   
+         *  [;:()\[\]{},]                           ;,:,(),[],{},",',, 
          *  \+[\+=]?                                  +, ++, += 
          *  \-[\-=]?                                  -, --, -= 
          *  \*[\*=]?                                  *, *=
@@ -47,9 +48,11 @@
          *  \|=?                                      |, |=
          *  ~=?                                       ~, ~= 
          *  >>>?=?                                    >>,>>=,>>>,>>>=
-         *  [a-zA-Z$_][a-zA-Z0-9_$]*                 $, b, b1, NaN, Infinity, my_var, MyClass, _privateFunc, $jQuery, etc..
-         */
-        var tokenre = /\s*([0-9]+([xX][0-9a-fA-F]+|\.[0-9]*)?([eE][+\-]?[0-9]+)?|[;:()\[\]{},"']|\+[\+=]?|-[\-=]?|\*[\*=]?|\/[\/=]?|%=?|==?=?|!=?=?|>>?>?=?|<<?=?|\|\||&&|\.|&=?|\^=?|\|=?|~=?|[a-zA-Z$_][a-zA-Z0-9_$]*)/;
+         *  [a-zA-Z$_][a-zA-Z0-9_$]*                  $, b, b1, NaN, Infinity, my_var, MyClass, _privateFunc, $jQuery, etc..
+         *  ""|"(.*?)[^\\]"                            "", "string 'literal'", "he said \"this is quoted\""
+         *  ''|'(.*?)[^\\]'                            '', 'string "literal"', 'he said this isn\'t quoted'
+         */         
+        var tokenre = /\s*([0-9]+([xX][0-9a-fA-F]+|\.[0-9]*)?([eE][+\-]?[0-9]+)?|[;:()\[\]{},]|\+[\+=]?|-[\-=]?|\*[\*=]?|\/[\/=]?|%=?|==?=?|!=?=?|>>?>?=?|<<?=?|\|\||&&|\.|&=?|\^=?|\|=?|~=?|[a-zA-Z$_][a-zA-Z0-9_$]*|""|"(.*?)([^\\]|\\\\)"|''|'(.*?)([^\\]|\\\\)')/;
         
         /*
          *  Return the next token and increment
@@ -68,7 +71,7 @@
             return rawTokens[tokenPointer];
         }  
 
-        function isAlpha(c) {
+        function isDigit(c) {
             if(c >= '0' && c <= '9') {
                 return true;
             }
@@ -87,7 +90,7 @@
             c = val.charAt(i);
             while(c) {
                 // numbers
-                if(isAlpha(c)) {
+                if(isDigit(c)) {
                     str = c;
                     i += 1;
                     
@@ -100,7 +103,7 @@
                             i += 1;
                             for(;;) {
                                 c = val.charAt(i);
-                                if(isAlpha(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+                                if(isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
                                     str += c;
                                     i += 1;
                                 } else {
@@ -112,12 +115,12 @@
                                 }
                             }
                             parsed = { type: 'number', value: str };                              
-                        } else if(isAlpha(c)) { // octal - i.e. 0214                      
+                        } else if(isDigit(c)) { // octal - i.e. 0214                      
                             str += c;
                             i += 1;
                             for(;;) {
                                 c = val.charAt(i);
-                                if(isAlpha(c)) {
+                                if(isDigit(c)) {
                                     str += c;
                                     i += 1;
                                 } else {
@@ -141,7 +144,7 @@
                         for(;;) {
                             c = val.charAt(i);
                             // support this valid JS number: 950.5e-2
-                            if(isAlpha(c) || c === '.' || c === 'e' || c === 'E' || c === '+' || c === '-') {
+                            if(isDigit(c) || c === '.' || c === 'e' || c === 'E' || c === '+' || c === '-') {
                                 str += c;
                                 i += 1;
                             } else if ( ( c >= 'a' && c <= 'f') || ( c >= 'A' && c <= 'F') || c === 'x' || c === 'X' ) {
@@ -160,7 +163,7 @@
                     i += 1;
                     for(;;) {
                         c = val.charAt(i);
-                        if((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_' || c === '$' || isAlpha(c)) {
+                        if((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c === '_' || c === '$' || isDigit(c)) {
                             str += c;
                             i += 1;
                         } else {
@@ -172,6 +175,13 @@
                         }
                         parsed = { type: 'name', value: str };
                     }
+                } // Strings
+                else if(c === '"' || c === "'") {
+                    var quoteType = (c === "'") ? "single" : "double";                    
+                    var str = val.slice(1,-1);        // remove first and last characters
+                    parsed = { type: 'string', value: str, quoted: quoteType };
+                    break;
+                    
                 } else {   // operators
                     parsed = { type: 'operator', value: val };
                     c = "";
@@ -204,6 +214,7 @@
 			// reset state
 			rawTokens = [];
             tokenPointer = 0;
+            rawSource = source;
 			
             // create a list of raw tokens from the source code
             rawTokens = createTokens(source); 
@@ -282,7 +293,7 @@
         /*
          *  Peek at the next raw token. 
          *
-         *  Used to make syntax analysis about JavaScript niceties as:
+         *  Used to make syntax analysis about JavaScript niceties such as:
          *
          *     >>> (5 + + + + - + + + - 5 === 10);
          *     true
@@ -297,13 +308,12 @@
             }            
             return tokens[peekIndex];            
         }        
-        
-    
+            
         /*
          *  Get the next token, and turn it into a symbol
          */
         function advance(expected) {
-            var rawToken, val, type, symbol, obj;
+            var rawToken, val, type, symbol, obj, strType;
             
             // throw an error if we didn't get the token we expected
             if(expected && expected !== currentToken.id) {
@@ -324,11 +334,14 @@
             // based on the raw token type
             val  = rawToken.value;
             type = rawToken.type            
+            strType = rawToken.quoted || null;
+            
             // number
             if(type === 'number') {
                 symbol = symbolTable['(literal)'];                
-            } // operator
-            else if(type === 'name') {
+            } else if(type == 'string') {
+                symbol = symbolTable['(literal)'];                
+            } else if(type === 'name') {
                 symbol = symbolTable[val];
             }
             else if (type === 'operator') {                 
@@ -387,6 +400,7 @@
             currentToken = new obj();
             currentToken.value = val;
             currentToken.arity = type;
+            currentToken.strType = strType;
             
             return currentToken;            
         }
@@ -562,6 +576,8 @@
                     return unary(node);
                 case 'number':
                     return number(node);
+                case 'string':
+                    return string(node);
                 case 'name':
                     return name(node);
                 error("Unknown node type: " + node.arity);
@@ -584,6 +600,11 @@
         
         function number(node) {
             return node.value;
+        }
+        
+        function string(node) {      
+            var q = (node.strType === 'double') ? '"' : "'";
+            return q + node.value + q;
         }
         
         function name(node) {
