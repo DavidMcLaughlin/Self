@@ -449,6 +449,17 @@
         infix('/', 60);
         infix('%', 60);
         
+        /*
+         *  Comma operator can pretty much replace
+         *  a semi-colon...
+         */
+        infix(',', 200, function(left) {
+            this.first = left;
+            this.second = expression(200);
+            this.arity = "comma";
+            return this;
+        });
+        
         // prefix operators
         prefix('-');
         prefix('~');
@@ -461,47 +472,32 @@
         
         // assignment operators
         function assignment(id) {
-            return infixr(id, 10, function(left) {
-                if (left.id !== '.' && left.id !== "[" && left.arity !== "name") {
-                    error("Bad left value on assignment.");
+            return infixr(id, 10, function(left) {           
+                if (left.id !== ',' && left.id !== '.' && left.id !== "[" && left.arity !== "name") {
+                    error("Bad left value on assignment: " + left.arity);
                 }
                 this.first = left;
                 this.second = expression(9);
-                this.arity = "binary"
-                return this;            
+                this.arity = "binary";
+                return this;
             });        
         }        
         assignment("=");
         assignment("+=");
         assignment("-=");
-        
-        
+                
         // statements
-        stmt("var", function() {
-            var vars = [], nameToken, assignmentToken;            
-            
-            while(true) {
-                nameToken = currentToken;
-                if(nameToken.arity !== "name") {
-                    error("Expected a new variable name.");
-                    return;
-                }                   
-                advance();
-                if (currentToken.id === "=") {
-                    assignmentToken = currentToken;
-                    advance("=");
-                    assignmentToken.first = nameToken;
-                    assignmentToken.second = expression(0);
-                    assignmentToken.arity = "binary";
-                    vars.push(assignmentToken);
-                }
-                if (currentToken.id !== ",") {
-                    break;
-                }
-                advance(",");                
-            }
-            advance(";");                       
-            
+        stmt("var", function() {         
+            var vars = expression(0);
+            // Support:
+            // var x;
+            // var x = 10;
+            // var x,y,z;
+            // var x = 10, y = 20, z;            
+            if(vars.arity !== 'binary' && vars.arity !== 'name' && vars.arity !== 'comma') {
+                error("Bad token type after var declaration: " + vars.arity);
+            }            
+            advance(';');
             return { arity: "variable", first : vars };
         });
 
@@ -550,17 +546,24 @@
                     return name(node);
                 case 'variable':
                     return variable(node);
+                case 'comma':
+                    return comma(node);
                 default:
                     error("Unknown node type: " + node.arity);
             }
         }
         
-        function variable(node) {
-            var vars = node.first, vstrs = [];
-            for(var i = 0, j = vars.length; i < j; i++) {
-                vstrs.push(evalNode(vars[i]));                            
-            }   
-            return "var " + vstrs.join(', ');
+        function comma(node) {
+            var str = evalNode(node.first);
+            str += ', ';
+            if(node.second) {
+                str += evalNode(node.second); 
+            }
+            return str;
+        }
+        
+        function variable(node) { 
+            return "var " + evalNode(node.first);
         }
 
         function unary(node) {

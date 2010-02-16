@@ -7,6 +7,16 @@ function testMultipleDeclaration() {
     assertEquals(eval(testcode), compileAndRun(testcode));
 }
 
+function testDeclareNoAssignment() {
+    var testcode = "var a,b,c,d,e,f,g,x,y,z;10;";
+    assertEquals(eval(testcode), compileAndRun(testcode));
+}
+
+function testCommasNoAssignment() {
+    var testcode = "var x = 10, y = 20, z = 20; x,y,z;"
+    assertEquals(eval(testcode), compileAndRun(testcode));
+}
+
 function testAssignment() {
     var testcode = "x = 10; x;";
     assertEquals(eval(testcode), compileAndRun(testcode));
