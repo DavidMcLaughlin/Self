@@ -40,6 +40,11 @@ function testVariableStrings() {
     assertEquals(eval(testcode), compileAndRun(testcode));    
 }
 
+function testOtherAssignment() {
+    var testcode = "var x = 10; x += 15, x <<= 2; x - 10;";
+    assertEquals(eval(testcode), compileAndRun(testcode));
+}
+
 function testReservedNamePrevention() {
     var compiled;
     try {

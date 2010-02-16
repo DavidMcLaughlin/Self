@@ -328,7 +328,7 @@
         
         function statements() {
             var s = [];
-            while(currentToken.value !== '(end)') {
+            while(currentToken.value !== '(end)' && currentToken.value !== '}') {
                 s.push(statement());
             }
             return s;
@@ -399,6 +399,15 @@
             };            
             return s;
         }
+        
+        /*
+         *  A block is statements surrounded by braces
+         */
+        function block() {
+            var t = currentToken;
+            advance("{");
+            return t.std();
+        }
     
         /*
          *
@@ -417,7 +426,7 @@
                 symbol(delims[i]);
             }
         }
-        delim([';',')',',','(end)']);
+        delim([';',')','}',',','(end)']);
 
         // reserved variables/keywords
         reserved('Infinity');
@@ -431,7 +440,6 @@
         function bitwise(ops) {
             for(var i = 0, j = ops.length; i < j; i++) {
                 infix(ops[i], 30);
-                infix(ops[i] + '=', 30);
             }
         }        
         bitwise(['&','^','|','<<','>>','>>>']);    
@@ -485,12 +493,14 @@
                 this.arity = "binary";
                 return this;
             });        
-        }        
-        assignment("=");
-        assignment("+=");
-        assignment("-=");
+        }   
+        var assignops = ['=','+=','-=','/=','*=','&=','^=','|=','<<=','>>=','>>>='];
+        for(var i = 0, j = assignops.length; i < j; i++) {
+            assignment(assignops[i]);
+        }
                 
         // statements
+        // variables
         stmt("var", function() {         
             var vars = expression(0);
             // Support:
@@ -503,6 +513,28 @@
             }            
             advance(';');
             return { arity: "variable", first : vars };
+        });
+        
+        // blocks
+        stmt("{", function () {
+            var a = statements();
+            advance("}");
+            return a;
+        });
+        
+        // if statement
+        stmt("if", function() {
+            advance("(");
+            this.first = expression(0);
+            advance(")");            
+            this.second = block();   
+            // check for else if...
+            if(currentToken.id === "else") {
+                advance("else");
+                this.third = currentToken.id === "if" ? statement() : block();
+            }       
+            this.arity = "statement";
+            return this;        
         });
 
         /*
@@ -552,9 +584,26 @@
                     return variable(node);
                 case 'comma':
                     return comma(node);
+                case 'statement':
+                    return statement(node);
                 default:
                     error("Unknown node type: " + node.arity);
             }
+        }
+        
+        function statements(sarr) {
+            var s = [];
+            for(var i = 0, j = sarr.length; i < j; i++) {
+                s.push(evalNode(sarr[i]));
+            }            
+            return s.join("\n");
+        }
+        
+        function statement(node) {
+            var str = node.id;
+            str += '(' + evalNode(node.first) + ')';
+            str += '{' + statements(node.second) + '}';            
+            return str;
         }
         
         function comma(node) {
@@ -602,19 +651,13 @@
         }
     
         return function(tree) {
-            var statements, output = [];
+            var s, output = [];
             if(!isArray(tree)) {
-                statements = [tree];
+                s = [tree];
             } else {
-                statements = tree;
-            }
-            
-            for(var i = 0; i < statements.length; i++) {                
-                var node = statements[i], str;         
-                str = evalNode(node);                
-                output.push(str + ";");
-            }
-            return output.join("\n");
+                s = tree;
+            }            
+            return statements(s);
         };    
     })(); 
 
@@ -632,9 +675,11 @@
         translate: translate,
         compile: function(source) {
             if(source) {
+                var start = new Date().getTime();
                 var tokens = tokenize(source);
                 var tree   = analyse(tokens);
                 var output = translate(tree);
+                this.executeTime = new Date().getTime() - start;
                 if(errors.length > 0) {
                     return errors;
                 }

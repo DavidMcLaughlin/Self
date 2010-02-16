@@ -1,3 +1,8 @@
   Self, a tokenizer, parser and compiler for JavaScript written in JavaScript
   Copyright 2010, David McLaughlin
   http://www.dmclaughlin.com
+  
+  I definitely did read "Rich Programmer Food" by Steve Yegge and decided I needed
+  to write a compiler, but my plans are more than just academic. 
+  
+  I _am_ going somewhere with this repository.
