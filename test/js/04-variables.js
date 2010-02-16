@@ -30,6 +30,16 @@ function testDeclareThenAssign() {
     assertEquals(eval(testcode), compileAndRun(testcode));
 }   
 
+function testVariableMaths() {
+    var testcode = "var x = 1, y = 94; var z = x + y; z;";
+    assertEquals(eval(testcode), compileAndRun(testcode));
+}
+
+function testVariableStrings() {
+    var testcode = "var pre = 'Thee ', ten = 'Silver Mt. Zion ', tious = 'Memorial Orchestra'; pre + ten + tious;";
+    assertEquals(eval(testcode), compileAndRun(testcode));    
+}
+
 function testReservedNamePrevention() {
     var compiled;
     try {

@@ -283,9 +283,9 @@
          *  Parse an expression
          *
          *  This is the Pratt Parser technique. The expression tree
-         *  is formed by shifting nodes to the left based on binding powers -
-         *  each infix symbol is given its own binding power when 
-         *  grammar is defined and it's own led function. 
+         *  is formed by shifting nodes to the left or right of a child tree
+         *  based on binding powers of operators, giving us operator
+         *  precedence. 
          *           
          *  For example, if this is called by statement() like so:
          *
@@ -306,6 +306,10 @@
          *           1   *
          *              / \
          *             2   3    
+         *         
+         *  The tree can then be traversed inorder to get the 
+         *  desired operator precedence. See the translator for examples.                 
+         *  
          */
         function expression(rbp) {
             var left, t = currentToken;
