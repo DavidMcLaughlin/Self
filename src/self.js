@@ -3,11 +3,14 @@
  *  Copyright 2010, David McLaughlin
  *  http://www.dmclaughlin.com
  * 
- *  Release: 0.0.2 (Strings Edition)
+ *  Release: 0.0.4 (Variables Edition)
  */
  var self = (function() {
  
+    var errors = [];
+ 
     var error = function(msg) {
+        errors.push(msg);
         throw new Error(msg);
     };
     
@@ -30,6 +33,10 @@
             string:     /^(""|"(.*?)([^\\]|\\\\)"|''|'(.*?)([^\\]|\\\\)')/
         };                
 
+        /*
+         *  Takes a token with a value and type and returns
+         *  an object parsed for use with the analyser
+         */        
         function parseToken(token) {
             var parsed, val = token.value, type = token.type;            
             if (type === 'string') {
@@ -46,7 +53,9 @@
         }
         
         /*
-         *  Apply each regex to the source
+         *  Apply each syntax regular expression against the source
+         *  throwing away whitespace. If no token is found, we can
+         *  say there is a syntax error. 
          */
         function token(source) {
             // try each regex against the source
@@ -93,6 +102,7 @@
         };
     })(); 
  
+
     /* 
      *  Lexer for lexical analysis
      *
@@ -203,12 +213,10 @@
             strType = rawToken.quoted || null;
             
             // number
-            if(type === 'number') {
-                symbol = symbolTable['(literal)'];                
-            } else if(type == 'string') {
-                symbol = symbolTable['(literal)'];                
+            if(type === 'number' || type === 'string') {
+                symbol = symbolTable['(literal)'];                                   
             } else if(type === 'name') {
-                symbol = symbolTable[val];
+                symbol = symbolTable[val] || symbolTable['(name)'];
             }
             else if (type === 'operator') {                 
                 // sort out the repeated plus/minus problem here
@@ -298,10 +306,6 @@
          *           1   *
          *              / \
          *             2   3    
-         *
-         *
-         *  So if we were writing a LISP compiler,
-         * 
          */
         function expression(rbp) {
             var left, t = currentToken;
@@ -317,14 +321,38 @@
             }
             return left;            
         }       
+        
+        function statements() {
+            var s = [];
+            while(currentToken.value !== '(end)') {
+                s.push(statement());
+            }
+            return s;
+        }
 
         /*
          *  Parse a statement
          */
         function statement() {
+            var t = currentToken;
+            // if current token is a statement symbol
+            if(t.std) {
+                advance();
+                return t.std();
+            }
             var exp = expression(0);
             advance(";");
             return exp;
+        }
+        
+        /*
+         *  Define a symbol as a statement
+         */
+        function stmt(sym, fn) {
+            var s = symbol(sym);
+            s.reserved = true;
+            s.std = fn;
+            return s;
         }
         
         /*
@@ -343,6 +371,18 @@
             return s;
         }
         
+        function infixr(id, bp, led) {            
+            var s = symbol(id, bp);
+            s.led = led || function(left) {
+                this.first = left;
+                // this is how it differs from infix                
+                this.second = expression(bp - 1); 
+                this.arity = "binary";
+                return this;                
+            };
+            return s;
+        }
+        
         /*
          *  Add a prefix operator (one which applies only to the right-most symbol)
          */
@@ -356,8 +396,16 @@
             return s;
         }
     
-        /*     Stop! GRAMMAR TIME        */        
+        /*
+         *
+         *
+         *  STOP!...  GRAMMAR TIME
+         *  Define the JavaScript grammar      
+         *
+         *
+         */        
         symbol('(literal)').nud = function() { return this; };
+        symbol('(name)').nud = function() { return this; };
         
         // expression delimiters
         function delim(delims) {
@@ -365,15 +413,15 @@
                 symbol(delims[i]);
             }
         }
-        delim([';',')','(end)']);
+        delim([';',')',',','(end)']);
 
         // reserved variables/keywords
         reserved('Infinity');
         reserved('NaN');
         
         // logical operators
-        infix('||', 30);
-        infix('&&', 30);  
+        infixr('||', 30);
+        infixr('&&', 30);  
         
         // bitwise operators
         function bitwise(ops) {
@@ -382,7 +430,8 @@
                 infix(ops[i] + '=', 30);
             }
         }        
-        bitwise(['&','^','|','<<','>>','>>>']);               
+        bitwise(['&','^','|','<<','>>','>>>']);    
+
 
         // equality operators
         function equality(ops) {
@@ -400,24 +449,77 @@
         infix('/', 60);
         infix('%', 60);
         
+        // prefix operators
         prefix('-');
         prefix('~');
         prefix('(', function() {
             var e = expression(0);
             advance(")");
+            e.parens = true;
             return e;
         });
+        
+        // assignment operators
+        function assignment(id) {
+            return infixr(id, 10, function(left) {
+                if (left.id !== '.' && left.id !== "[" && left.arity !== "name") {
+                    error("Bad left value on assignment.");
+                }
+                this.first = left;
+                this.second = expression(9);
+                this.arity = "binary"
+                return this;            
+            });        
+        }        
+        assignment("=");
+        assignment("+=");
+        assignment("-=");
+        
+        
+        // statements
+        stmt("var", function() {
+            var vars = [], nameToken, assignmentToken;            
+            
+            while(true) {
+                nameToken = currentToken;
+                if(nameToken.arity !== "name") {
+                    error("Expected a new variable name.");
+                    return;
+                }                   
+                advance();
+                if (currentToken.id === "=") {
+                    assignmentToken = currentToken;
+                    advance("=");
+                    assignmentToken.first = nameToken;
+                    assignmentToken.second = expression(0);
+                    assignmentToken.arity = "binary";
+                    vars.push(assignmentToken);
+                }
+                if (currentToken.id !== ",") {
+                    break;
+                }
+                advance(",");                
+            }
+            advance(";");                       
+            
+            return { arity: "variable", first : vars };
+        });
 
-        return function(tokenStream) {
+        /*
+         *  Takes an array of tokens and builds a parse
+         *  tree from them
+         */
+        return function(tokenArr) {
 		    // reset state
             currentToken = null;
             tokenPointer = 0;
             tokens = [];   
+            errors = []; // TODO - this state stuff sucks, refactor
  
-            tokens = tokenStream;
+            tokens = tokenArr;
             advance();
             // create a parse tree from a statement
-            var tree = statement();
+            var tree = statements();
             advance("(end)");
             return tree; 
         };
@@ -446,8 +548,19 @@
                     return string(node);
                 case 'name':
                     return name(node);
-                error("Unknown node type: " + node.arity);
+                case 'variable':
+                    return variable(node);
+                default:
+                    error("Unknown node type: " + node.arity);
             }
+        }
+        
+        function variable(node) {
+            var vars = node.first, vstrs = [];
+            for(var i = 0, j = vars.length; i < j; i++) {
+                vstrs.push(evalNode(vars[i]));                            
+            }   
+            return "var " + vstrs.join(', ');
         }
 
         function unary(node) {
@@ -457,11 +570,15 @@
         }
 
         function binary(node) {
-            var str = '(';            
-            str += evalNode(node.first);
+            var str = evalNode(node.first);
             str += node.value;
-            str += evalNode(node.second);                  
-            return str + ')';
+            str += evalNode(node.second);                              
+            
+            if(node.parens) {
+                return '(' + str + ')';
+            } else {
+                return str;
+            }
         }
         
         function number(node) {
@@ -510,7 +627,10 @@
             if(source) {
                 var tokens = tokenize(source);
                 var tree   = analyse(tokens);
-                var output = translate(tree);                                
+                var output = translate(tree);
+                if(errors.length > 0) {
+                    return errors;
+                }
                 return output; 
             }
         }
