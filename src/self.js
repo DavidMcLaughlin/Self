@@ -3,7 +3,7 @@
  *  Copyright 2010, David McLaughlin
  *  http://www.dmclaughlin.com
  * 
- *  Release: 0.0.4 (Variables Edition)
+ *  Release: 0.0.5 (Statements Edition)
  */
  var self = (function() {
  
@@ -395,8 +395,20 @@
             s.nud = nud || function() {
                 this.first = expression(70);
                 this.arity = "unary";
+                this.prefix = true;
                 return this;
             };            
+            return s;
+        }
+        
+        function suffix(id, led) {
+            var s = symbol(id, 90);
+            s.led = led || function(left) {
+                this.first = left;
+                this.arity = "unary";
+                this.suffix = true;
+                return this;
+            };
             return s;
         }
         
@@ -408,6 +420,7 @@
             advance("{");
             return t.std();
         }
+        
     
         /*
          *
@@ -416,9 +429,20 @@
          *  Define the JavaScript grammar      
          *
          *
-         */        
+         */                
+        var reservedWords = ['var','if','else','for','while','switch','do','case','try','catch'];         
+        function keywords(words) {
+            for(var i = 0, j = words.length; i < j; i++) {
+                var s = symbol(words[i]);
+                s.reserved = true;
+                s.nud = function() { return this; };
+            }
+        }         
+        keywords(reservedWords);        
+        
+         
         symbol('(literal)').nud = function() { return this; };
-        symbol('(name)').nud = function() { return this; };
+        symbol('(name)').nud = function() { return this; };        
         
         // expression delimiters
         function delim(delims) {
@@ -460,6 +484,11 @@
         infix('*', 60);
         infix('/', 60);
         infix('%', 60);
+        
+        // suffix
+        prefix('++');
+        suffix('++');
+        suffix('--');
         
         /*
          *  Comma operator can pretty much replace
@@ -536,6 +565,37 @@
             this.arity = "statement";
             return this;        
         });
+        
+        // while statement
+        stmt("while", function() {
+            advance("(");
+            this.first = expression(0);
+            advance(")");
+            this.second = block();
+            this.arity = "statement";
+            return this;            
+        });
+        
+        // for statement
+        stmt("for", function() {
+            advance("(");            
+            if(currentToken.value !== ';') {            
+                this.first = statement();
+            } else {
+                advance(";");
+            }
+            if(currentToken.value !== ';') {            
+                this.second = expression(0);
+            } 
+            advance(";");
+            if(currentToken.value !== ')') {                       
+                this.third = expression(0);
+            }
+            advance(")");
+            this.fourth = block();
+            this.arity = "forstatement";
+            return this;
+        });
 
         /*
          *  Takes an array of tokens and builds a parse
@@ -563,11 +623,15 @@
      *  Takes a parse tree and turns it into code
      */    
     var translate = (function() {
-    
+        
         function isArray(obj) {
             return obj.constructor == Array;
         }     
         
+        /*
+         *  Evaluate the node and pass it to the
+         *  corresponding output function        
+         */
         function evalNode(node) {            
             switch(node.arity) {
                 case 'binary':
@@ -586,24 +650,64 @@
                     return comma(node);
                 case 'statement':
                     return statement(node);
+                case 'forstatement':
+                    return forstatement(node);
                 default:
                     error("Unknown node type: " + node.arity);
             }
         }
         
+        /*
+         *  Takes an array of statements and evaluates
+         */
         function statements(sarr) {
             var s = [];
             for(var i = 0, j = sarr.length; i < j; i++) {
-                s.push(evalNode(sarr[i]));
+                var statement = evalNode(sarr[i]);
+                if(statement.block) {
+                    statement = statement.str;
+                } else {
+                    statement += ';';
+                }
+                s.push(statement);
             }            
             return s.join("\n");
         }
-        
+
+        /* 
+         *  A block statement - such as if, for, while, do, try, etc.    
+         *  The first node is a condition, the second is the statement
+         *  body and the third is the else/else if/catch/do branch
+         */
         function statement(node) {
             var str = node.id;
-            str += '(' + evalNode(node.first) + ')';
-            str += '{' + statements(node.second) + '}';            
-            return str;
+            str += '(' + evalNode(node.first) + ') { \n';            
+            str += statements(node.second);
+            str += '\n}\n';  
+            if(node.third) {
+                if(node.third.id === 'if') {
+                    var block = evalNode(node.third);
+                    str += 'else ' + block.str;
+                }
+                else {
+                    str += 'else { \n' + statements(node.third) + '\n}';                  
+                }
+            }
+            // block statements like for, while, do, etc. shouldn't be 
+            // followed by a semi-colon, so we return this object to 
+            // differentiate
+            return { str: str, block: true };
+        }    
+
+        function forstatement(node) {
+            var str = node.id + '(';                 
+            str += (node.first ? evalNode(node.first) : '') + ';';
+            str += (node.second ? evalNode(node.second) : '') + ';';
+            str += (node.third ? evalNode(node.third) : '');
+            str += ') {\n';
+            str += statements(node.fourth);
+            str += '\n}\n';
+            return { str: str, block: true};                    
         }
         
         function comma(node) {
@@ -620,8 +724,12 @@
         }
 
         function unary(node) {
-            var str = node.value;                       
-            str += evalNode(node.first);            
+            var str;
+            if(node.suffix) {
+                str = evalNode(node.first) + node.value;
+            } else {
+                str = node.value + evalNode(node.first);
+            }         
             return str;
         }
 

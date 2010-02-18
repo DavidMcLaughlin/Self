@@ -55,3 +55,8 @@ function testReservedNamePrevention() {
     }
     assert(!compiled);
 }
+
+function testChainedAssignment() {
+    var testcode = "var x,y,z; var x = y = z = 10;";
+    assertEquals(eval(testcode), compileAndRun(testcode));    
+}
