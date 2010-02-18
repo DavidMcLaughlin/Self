@@ -429,8 +429,17 @@
          *  Define the JavaScript grammar      
          *
          *
+         *  @idea - seperate this grammar into another
+         *          module.. which simply returns
+         *          a symbol table for the analyser. 
+         *          Can make it extensible too.. 
+         *
          */                
-        var reservedWords = ['var','if','else','for','while','switch','do','case','try','catch'];         
+        var reservedWords = [
+            'var','if','else','for','while','switch',
+            'do','case','try','catch','finally','break',
+            'default', 'throw'
+        ];         
         function keywords(words) {
             for(var i = 0, j = words.length; i < j; i++) {
                 var s = symbol(words[i]);
@@ -450,7 +459,7 @@
                 symbol(delims[i]);
             }
         }
-        delim([';',')','}',',','(end)']);
+        delim([';',':',')','}',',','(end)']);
 
         // reserved variables/keywords
         reserved('Infinity');
@@ -596,6 +605,87 @@
             this.arity = "forstatement";
             return this;
         });
+        
+        // do statement
+        stmt("do", function() {
+            this.first = block();
+            advance("while");
+            advance("(");
+            this.second = expression(0);
+            advance(")");
+            advance(";");            
+            this.arity = "dostatement";
+            return this;        
+        });
+        
+        stmt("try", function() {
+            this.first = block();
+            advance("catch");
+            advance("(");
+            if(currentToken.arity !== 'name') {
+                error("Expected name in catch statement, found: " + currentToken.arity);
+            }
+            this.second = currentToken;
+            advance();
+            advance(")");
+            this.third = block();
+            if(currentToken.id === 'finally') {
+                advance("finally");
+                this.fourth = block();
+            }            
+            this.arity = "trystatement";
+            return this;        
+        });
+        
+        stmt("switch", function() {
+            var cases = [], curCase, caseStatements;            
+            advance("(");
+            this.first = expression(0);
+            advance(")");
+            advance("{");
+            // get the case clauses
+            for(;;) {
+                curCase = {}, caseStatements = []; // clean out
+                if(currentToken.id !== 'case' && currentToken.id !== 'default') {
+                    error("Invalid switch statement, expected case or default and found: " + currentToken.value);
+                    break;
+                }
+                
+                if(currentToken.id === 'default') {
+                    curCase.isDefault = true;
+                    advance('default');
+                    advance(':');
+                } else {
+                    advance('case');                
+                    curCase.first = expression(0);
+                    advance(":");
+                }
+                
+                while(currentToken.id !== 'case' && currentToken.id !== '}' && currentToken.id !== 'default') {
+                    caseStatements.push(statement());                    
+                }
+                curCase.second = caseStatements;
+                cases.push(curCase);
+                if(currentToken.id === '}') {
+                    break;
+                }                
+            }            
+            this.second = cases;
+            this.arity = "switchstatement";
+            advance('}');
+            return this;            
+        });
+        
+        stmt('throw', function() {
+            var block = false; 
+            this.first = expression(0);            
+            if(currentToken.value === ';') {
+                advance(';');
+            }       
+            this.arity = "throwstatement";
+            // doesn't have to be.. can throw a function or other block stuff
+            return this;                    
+        });
 
         /*
          *  Takes an array of tokens and builds a parse
@@ -631,6 +721,8 @@
         /*
          *  Evaluate the node and pass it to the
          *  corresponding output function        
+         *
+         *  Maybe refactor this into a hash lookup..
          */
         function evalNode(node) {            
             switch(node.arity) {
@@ -652,6 +744,14 @@
                     return statement(node);
                 case 'forstatement':
                     return forstatement(node);
+                case 'dostatement':
+                    return dostatement(node);                    
+                case 'trystatement':
+                    return trystatement(node);                           
+                case 'switchstatement':
+                    return switchstatement(node);   
+                case 'throwstatement':
+                    return throwstatement(node);                       
                 default:
                     error("Unknown node type: " + node.arity);
             }
@@ -673,31 +773,31 @@
             }            
             return s.join("\n");
         }
-
-        /* 
-         *  A block statement - such as if, for, while, do, try, etc.    
-         *  The first node is a condition, the second is the statement
-         *  body and the third is the else/else if/catch/do branch
-         */
+        
         function statement(node) {
             var str = node.id;
-            str += '(' + evalNode(node.first) + ') { \n';            
-            str += statements(node.second);
-            str += '\n}\n';  
+            str += '(' + evalNode(node.first) + ') {\n';
+            str += statements(node.second) + '\n';
+            str += '}\n';
+            
+            // else, else if node
             if(node.third) {
                 if(node.third.id === 'if') {
                     var block = evalNode(node.third);
                     str += 'else ' + block.str;
-                }
-                else {
-                    str += 'else { \n' + statements(node.third) + '\n}';                  
+                } else {
+                    str += 'else { \n' + statements(node.third) + '\n}';   
                 }
             }
-            // block statements like for, while, do, etc. shouldn't be 
-            // followed by a semi-colon, so we return this object to 
-            // differentiate
             return { str: str, block: true };
-        }    
+        }        
+        
+        function dostatement(node) {
+            var str = node.id + '{\n';
+            str += statements(node.first) + '\n';
+            str += '} while(' + evalNode(node.second) + ')';            
+            return str;
+        }
 
         function forstatement(node) {
             var str = node.id + '(';                 
@@ -708,6 +808,45 @@
             str += statements(node.fourth);
             str += '\n}\n';
             return { str: str, block: true};                    
+        }
+        
+        function trystatement(node) {
+            var str = node.id + '{\n';
+            str += statements(node.first) + '\n';
+            str += '} catch(' + evalNode(node.second) + ') { \n';
+            str += statements(node.third) + '\n';
+            if(node.fourth) {
+                str += '} finally {\n';
+                str += statements(node.fourth);
+                str += '}\n';
+            } else {
+                str += '}\n';
+            }
+            return {str: str, block: true};        
+        }
+        
+        function switchstatement(node) {
+            var clauses = node.second;
+            var str = node.id + '(' + evalNode(node.first) + ') {\n';
+            // for each clause
+            for(var i = 0, j = clauses.length; i < j; i++) {
+                if(clauses[i].isDefault) {
+                    str += 'default:\n';
+                } else {
+                    str += 'case ' + evalNode(clauses[i].first) + ':\n';
+                }
+                if(clauses[i].second) {
+                    str += statements(clauses[i].second);
+                }
+                str += '\n';
+            }
+            str += '}';
+            return {str: str, block: true};
+        }
+        
+        function throwstatement(node) {
+            var str = node.id + ' ' + evalNode(node.first);
+            return str;         
         }
         
         function comma(node) {

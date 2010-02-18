@@ -42,7 +42,8 @@ function testForInStatement() {
 }
 
 function testDoStatement() {
-    assert(false);
+    var testcode = "var x = 0; do { x+=1; } while(x <= 20); x;";
+    assertEquals(eval(testcode), compileAndRun(testcode));
 }
 
 function testWhileStatement() {
@@ -54,11 +55,24 @@ function testWhileStatement() {
 }
 
 function testSwitchStatement() {
-    assert(false);
+    var testcode = "var x = 'a', y = 'z'; switch(x) { case 'a': y = 'b'; break; default: y = 'y'; } y;";
+    assertEquals(eval(testcode), compileAndRun(testcode));
+    
+    testcode = "var x = 10; switch(x) { case 10 === 20: case x < 5: case 10: x = 50; default: x = 0; } x;";
+    assertEquals(eval(testcode), compileAndRun(testcode));    
 }
 
 function testTryStatement() {
-    assert(false);
+    var testcode = "var x; try { 68++; x = 20; } catch(e) { x = 10; } x;";
+    assertEquals(eval(testcode), compileAndRun(testcode));
+    
+    testcode = "var x; try { 100++; } catch(e) { x = 10; } finally { x = 20; } x;";
+    assertEquals(eval(testcode), compileAndRun(testcode));    
+}
+
+function testThrowStatement() {
+    var testcode = "var x; try { throw 'exception thrown'; } catch(e) { x = e; } x;";
+    assertEquals('exception thrown', compileAndRun(testcode));
 }
 
 function testLabelledStatement() {
